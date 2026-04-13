@@ -52,8 +52,7 @@ CSW (Claude Subscription Worker) is a Node.js API server that wraps the Claude C
            │  jobs              │
            │  presets           │
            │  response_cache    │
-           │  response_cache    │
-           │  _pool             │
+           │  response_cache_pool│
            └────────────────────┘
 ```
 

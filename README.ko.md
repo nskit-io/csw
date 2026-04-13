@@ -107,4 +107,4 @@ CSW는 [뉴명](https://newmyoung.com)의 AI 백엔드로 운영 중입니다 --
 
 ## 라이선스
 
-[MIT](./LICENSE)
+CC BY-NC-SA 4.0 — [LICENSE](LICENSE) 참조
