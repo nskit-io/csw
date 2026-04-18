@@ -2,7 +2,11 @@
 
 **월 $200 Claude 구독을 확장 가능한 AI 처리 API로 전환합니다.**
 
-[아키텍처](./architecture/overview.md) | [Worker 모드](./architecture/worker-mode.md) | [API 스펙](./reference/api-spec.md) | [스키마](./reference/schema.sql) | [English](./README.md)
+[🇬🇧 English](./README.md) · [🇯🇵 日本語](./README.ja.md) · [🇨🇳 中文](./README.zh.md)
+
+[아키텍처](./architecture/overview.md) | [Worker 모드](./architecture/worker-mode.md) | [API 스펙](./reference/api-spec.md) | [스키마](./reference/schema.sql)
+
+> [**NSKit**](https://github.com/nskit-io/nskit-io) 인프라 구성 요소 — *갇혀 있어서 무한 조합*. CSW는 NSKit 프로덕션 서비스의 AI 처리 레이어를 담당합니다. 구독 티어의 Claude를 비용 효율적 백엔드 역량으로 전환.
 
 ---
 

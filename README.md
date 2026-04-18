@@ -2,7 +2,11 @@
 
 **Turn a $200/month Claude subscription into a scalable AI processing API.**
 
-[Architecture](./architecture/overview.md) | [Worker Mode](./architecture/worker-mode.md) | [API Spec](./reference/api-spec.md) | [Schema](./reference/schema.sql) | [한국어](./README.ko.md)
+[🇰🇷 한국어](./README.ko.md) · [🇯🇵 日本語](./README.ja.md) · [🇨🇳 中文](./README.zh.md)
+
+[Architecture](./architecture/overview.md) | [Worker Mode](./architecture/worker-mode.md) | [API Spec](./reference/api-spec.md) | [Schema](./reference/schema.sql)
+
+> Infrastructure component of [**NSKit**](https://github.com/nskit-io/nskit-io) — *bound by structure, free to combine.* CSW powers the AI processing layer behind NSKit's production services, turning subscription-tier Claude into cost-efficient back-end capability.
 
 ---
 
