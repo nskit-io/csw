@@ -18,7 +18,7 @@ Claude API pricing is pay-per-token:
 |-------|-------|--------|
 | Opus | $15/M tokens | $75/M tokens |
 | Sonnet | $3/M tokens | $15/M tokens |
-| Haiku | $0.25/M tokens | $1.25/M tokens |
+| Haiku | $0.80/M tokens | $4/M tokens |
 
 A Claude Max subscription costs **$200/month** for unlimited\* usage via the CLI (`claude -p`).
 
@@ -104,6 +104,9 @@ When conversation messages exceed a threshold, older messages are automatically 
 | `POST` | `/api/v1/cache/purge` | Purge expired cache |
 | `POST` | `/api/v1/workers` | Create a worker (Worker Mode) |
 | `GET` | `/api/v1/workers` | List workers |
+| `GET` | `/api/v1/workers/:name` | Get a single worker's status |
+| `POST` | `/api/v1/workers/:name/wake` | Wake an idle worker |
+| `POST` | `/api/v1/workers/:name/restart` | Restart a worker |
 | `DELETE` | `/api/v1/workers/:name` | Destroy a worker |
 
 See the full [API Specification](./reference/api-spec.md) for request/response schemas and examples.

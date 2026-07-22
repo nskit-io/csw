@@ -53,9 +53,14 @@ The core endpoint. Handles all AI processing requests.
   "success": true,
   "jobId": "550e8400-e29b-41d4-a716-446655440000",
   "sessionId": "660e8400-e29b-41d4-a716-446655440001",
-  "response": "Claude's response text",
-  "cached": false,
-  "duration": 8542
+  "result": "Claude's response text",
+  "meta": {
+    "durationMs": 8542,
+    "model": "sonnet",
+    "cached": false,
+    "compacted": false,
+    "worker": false
+  }
 }
 ```
 
@@ -64,9 +69,12 @@ The core endpoint. Handles all AI processing requests.
 | `success` | boolean | Whether the request succeeded |
 | `jobId` | string | Unique job identifier |
 | `sessionId` | string/null | Session ID (if session mode) |
-| `response` | string/object | The AI response (text or parsed JSON) |
-| `cached` | boolean | Whether the response came from cache |
-| `duration` | number | Processing time in milliseconds |
+| `result` | string/object | The AI response (text or parsed JSON) |
+| `meta.durationMs` | number | Processing time in milliseconds |
+| `meta.model` | string | Model that served the request |
+| `meta.cached` | boolean | Whether the response came from cache |
+| `meta.compacted` | boolean | Whether conversation history was compacted for this request |
+| `meta.worker` | boolean/string | Worker Mode flag (`false` for Standard Mode, otherwise the worker name) |
 
 **Error Response:**
 
@@ -448,6 +456,50 @@ List all workers with their status.
       "createdAt": "2026-04-07T00:00:00.000Z"
     }
   ]
+}
+```
+
+### GET /workers/:name
+
+Get a single worker's status and details.
+
+**Response:**
+```json
+{
+  "success": true,
+  "worker": {
+    "name": "fortune-kr",
+    "status": "ready",
+    "presetId": "c5f32e25-...",
+    "alwaysOn": true,
+    "requestCount": 542,
+    "lastRequestAt": "2026-04-08T09:30:00.000Z",
+    "createdAt": "2026-04-07T00:00:00.000Z"
+  }
+}
+```
+
+### POST /workers/:name/wake
+
+Wake an idle worker, recreating its tmux session so it is ready to serve the next request.
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Worker woken"
+}
+```
+
+### POST /workers/:name/restart
+
+Restart a worker (tear down and recreate its tmux session). Used to recover a hung or errored worker.
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Worker restarted"
 }
 ```
 
