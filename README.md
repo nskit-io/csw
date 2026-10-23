@@ -1,6 +1,6 @@
 # CSW (Claude Subscription Worker)
 
-**Turn a $200/month Claude subscription into a scalable AI processing API.**
+**Turn a flat-rate Claude subscription into a scalable AI processing API.**
 
 [🇰🇷 한국어](./README.ko.md) · [🇯🇵 日本語](./README.ja.md) · [🇨🇳 中文](./README.zh.md)
 
@@ -12,33 +12,25 @@
 
 ## The Problem
 
-Claude API pricing is pay-per-token:
+The Claude API is billed **per token**: every request is metered on its input and output, so the bill grows in step with volume.
 
-| Model | Input | Output |
-|-------|-------|--------|
-| Opus | $15/M tokens | $75/M tokens |
-| Sonnet | $3/M tokens | $15/M tokens |
-| Haiku | $0.80/M tokens | $4/M tokens |
+A Claude subscription is billed as a **flat monthly fee** and can be used from the CLI (`claude -p`) within the plan's usage limits.
 
-A Claude Max subscription costs **$200/month** for unlimited\* usage via the CLI (`claude -p`).
+**CSW bridges this gap.** It wraps the Claude CLI into a REST API server, so steady, cacheable back-end workloads can run on a flat-rate subscription instead of a metered bill.
 
-**CSW bridges this gap.** It wraps the Claude CLI into a REST API server, turning your subscription into a production AI backend.
+> Current API prices and plan details: [anthropic.com/pricing](https://www.anthropic.com/pricing). Subscription use is subject to Anthropic's usage policies and plan limits. CSW is designed for legitimate processing workloads, not abuse.
 
-> \*Subject to Anthropic's fair use policy. CSW is designed for legitimate processing workloads, not abuse.
+## Cost Model
 
-## Cost Comparison
+Exact prices change, so this README does not pin numbers. The trade-off is structural:
 
-Real-world math for a service handling **1,000 requests/day** (~30,000/month), averaging ~2,000 tokens per request:
+| | Pay-per-token API | Flat subscription via CSW |
+|---|---|---|
+| Cost shape | Grows linearly with tokens processed | Fixed per month |
+| Throughput | Parallel, limited by API rate tiers | Bounded by plan limits and the number of worker sessions |
+| Fits best | Spiky or low volume, strict SLAs | Steady volume, repeatable prompts, cacheable responses |
 
-| Approach | Monthly Cost | Cost/Request |
-|----------|-------------|--------------|
-| Claude API (Opus) | ~$4,500 | ~$0.15 |
-| Claude API (Sonnet) | ~$900 | ~$0.03 |
-| **CSW (subscription)** | **$200** | **~$0.007** |
-
-That's **4.5-22x cheaper** for equivalent work. With response caching enabled, effective cost drops even further since cached responses cost nothing.
-
-<img src="https://mermaid.ink/img/eHljaGFydC1iZXRhCiAgICB0aXRsZSAiTW9udGhseSBDb3N0OiBBUEkgdnMgQ1NXICgxMDAwIHJlcS9kYXkpIgogICAgeC1heGlzIFsiQ2xhdWRlIEFQSTxici8-T3B1cyIsICJDbGF1ZGUgQVBJPGJyLz5Tb25uZXQiLCAiQ1NXPGJyLz5TdGFuZGFyZCIsICJDU1c8YnIvPldvcmtlciJdCiAgICB5LWF4aXMgIk1vbnRobHkgQ29zdCAoJCkiIDAgLS0-IDUwMDAKICAgIGJhciBbNDUwMCwgOTAwLCAyMDAsIDIwMF0K" alt="Monthly Cost: API vs CSW" />
+With response caching enabled, a cache hit does not call Claude at all, so steady workloads get cheaper per request over time.
 
 ## Architecture
 
@@ -84,10 +76,13 @@ System prompt + memory entries (rules, properties, actions) + conversation histo
 Supports text, JSON, and structured output with JSON schema validation. Claude's `--output-format json` + `--json-schema` when a schema is provided.
 
 ### History Compaction
-When conversation messages exceed a threshold, older messages are automatically summarized using a lightweight model (Haiku), keeping context windows manageable.
+When conversation messages exceed a threshold, older messages are automatically summarized by a designated general-purpose worker, keeping context windows manageable.
+
+### Replicas and Queueing
+A worker can run several replicas (parallel tmux sessions). When every replica is busy, a request waits in a queue (default up to 60s) instead of failing immediately.
 
 ### Worker Health Monitoring
-30-second health checks, automatic restart on hang detection, staggered recovery on server reboot, and configurable idle/awake lifecycle.
+30-second health checks, automatic restart on hang detection, staggered recovery on server reboot, and a configurable idle/wake lifecycle.
 
 ## API Overview
 
@@ -99,30 +94,48 @@ When conversation messages exceed a threshold, older messages are automatically 
 | `POST` | `/api/v1/sessions/:id/archive` | Archive a session |
 | `GET/POST` | `/api/v1/sessions/:id/memory` | Get/set session memory |
 | `GET/POST` | `/api/v1/presets` | List/create presets |
-| `GET/PUT/DELETE` | `/api/v1/presets/:id` | CRUD preset |
+| `GET/PUT/DELETE` | `/api/v1/presets/:id` | CRUD preset (admin) |
+| `POST` | `/api/v1/presets/:id/run` | Resolve a preset into a ready-to-send `/process` request body |
+| `POST` | `/api/v1/presets/:id/generate-sample` | Regenerate a preset's sample input (admin) |
+| `GET` | `/api/v1/jobs` | List recent jobs |
+| `GET` | `/api/v1/jobs/:id` | Get a job |
 | `GET` | `/api/v1/cache/stats` | Cache statistics |
-| `POST` | `/api/v1/cache/purge` | Purge expired cache |
-| `POST` | `/api/v1/workers` | Create a worker (Worker Mode) |
+| `GET/DELETE` | `/api/v1/cache/:key` | Inspect / delete a cache entry (delete = admin) |
+| `POST` | `/api/v1/cache/purge` | Purge expired cache (admin) |
+| `POST` | `/api/v1/workers` | Create a worker (admin) |
 | `GET` | `/api/v1/workers` | List workers |
 | `GET` | `/api/v1/workers/:name` | Get a single worker's status |
 | `POST` | `/api/v1/workers/:name/wake` | Wake an idle worker |
-| `POST` | `/api/v1/workers/:name/restart` | Restart a worker |
-| `DELETE` | `/api/v1/workers/:name` | Destroy a worker |
+| `POST` | `/api/v1/workers/:name/scale` | Set a worker's replica count (admin) |
+| `POST` | `/api/v1/workers/:name/restart` | Restart a worker (admin) |
+| `DELETE` | `/api/v1/workers/:name` | Destroy a worker (admin) |
+
+"Admin" endpoints change server state (workers run processes on the host). Keep the whole API on a private network — see [Security](#security).
 
 See the full [API Specification](./reference/api-spec.md) for request/response schemas and examples.
+
+## Security
+
+CSW drives a CLI and tmux sessions on its host, so treat its API as an administrative surface:
+
+- **Never expose it to the public internet.** Run it on a private network, and put an authenticating proxy or IP allowlist in front of it. The reference server has no built-in authentication.
+- **Validate every identifier that reaches the host.** Worker names must match an allowlist pattern (`^[a-z0-9][a-z0-9-]{0,31}$`); anything else is rejected with `400`.
+- **Execute with argv, never a shell string.** Pass values to `tmux` and other commands as separate arguments (`execFile`-style), never by interpolating them into a command line.
+- **Run workers under an unprivileged account.** A dedicated OS user with no sudo rights and access only to the workers directory.
+
+See [API Specification — Security](./reference/api-spec.md#security) and [Worker Mode — Hardening](./architecture/worker-mode.md#hardening).
 
 ## Production Use
 
 CSW powers the AI backend for [NewMyoung](https://newmyoung.com) -- an AI-powered fortune and naming service operating across Korea, Japan, and Chinese-speaking regions (Taiwan, Singapore, Macau, Malaysia, Hong Kong):
 
-- **9 presets** handling fortune readings, fortune cookies, and divination queries
+- **Per-language presets** handling fortune readings, fortune cookies, and divination queries
 - **tmux-based workers** with `alwaysOn` for user-facing endpoints
 - **Growing Pool Cache** ensuring diverse AI-generated fortunes (no two users see the same reading)
-- **17,000+ requests/month** served at ~$0.01/request effective cost
 
 ## Build Your Own
 
-This repository provides the **concept and reference architecture**. The production CSW runs at csw.nskit.io, but the patterns here are general-purpose.
+This repository provides the **concept and reference architecture**. The production instance is privately operated on an internal network; the patterns here are general-purpose.
 
 You can:
 

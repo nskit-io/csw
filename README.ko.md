@@ -1,6 +1,6 @@
 # CSW (Claude Subscription Worker)
 
-**월 $200 Claude 구독을 확장 가능한 AI 처리 API로 전환합니다.**
+**정액 Claude 구독을 확장 가능한 AI 처리 API로 전환합니다.**
 
 [🇬🇧 English](./README.md) · [🇯🇵 日本語](./README.ja.md) · [🇨🇳 中文](./README.zh.md)
 
@@ -12,31 +12,25 @@
 
 ## 문제
 
-Claude API는 토큰 기반 과금입니다:
+Claude API는 **토큰 단위 과금**입니다. 요청마다 입력·출력 토큰이 계량되므로, 처리량이 늘어나는 만큼 청구액도 함께 늘어납니다.
 
-| 모델 | Input | Output |
-|-------|-------|--------|
-| Opus | $15/M tokens | $75/M tokens |
-| Sonnet | $3/M tokens | $15/M tokens |
-| Haiku | $0.25/M tokens | $1.25/M tokens |
+Claude 구독은 **월 정액**이며, 플랜의 사용 한도 안에서 CLI(`claude -p`)로 쓸 수 있습니다.
 
-Claude Max 구독은 **월 $200**으로 CLI(`claude -p`)를 통한 무제한\* 사용이 가능합니다.
+**CSW는 이 격차를 메웁니다.** Claude CLI를 REST API 서버로 감싸서, 꾸준하고 캐시 가능한 백엔드 워크로드를 종량 청구 대신 정액 구독 위에서 돌릴 수 있게 합니다.
 
-**CSW는 이 격차를 메웁니다.** Claude CLI를 REST API 서버로 감싸서, 구독을 프로덕션 AI 백엔드로 전환합니다.
+> 최신 API 가격과 플랜 정보: [anthropic.com/pricing](https://www.anthropic.com/pricing). 구독 사용은 Anthropic의 이용 정책과 플랜 한도를 따릅니다. CSW는 정당한 처리 워크로드를 위해 설계되었습니다.
 
-> \*Anthropic의 공정 사용 정책 적용. CSW는 정당한 처리 워크로드를 위해 설계되었습니다.
+## 비용 구조
 
-## 비용 비교
+가격은 바뀌므로 이 문서는 숫자를 고정하지 않습니다. 차이는 구조에 있습니다.
 
-**하루 1,000건** (~월 30,000건), 요청당 평균 ~2,000 토큰 기준 실제 계산:
+| | 토큰 과금 API | CSW를 통한 정액 구독 |
+|---|---|---|
+| 비용 형태 | 처리한 토큰에 비례해 증가 | 월 고정 |
+| 처리량 | 병렬, API 요금 등급의 rate limit | 플랜 한도와 워커 세션 수에 제한 |
+| 적합한 경우 | 들쭉날쭉하거나 적은 트래픽, 엄격한 SLA | 꾸준한 트래픽, 반복 프롬프트, 캐시 가능한 응답 |
 
-| 방식 | 월 비용 | 건당 비용 |
-|------|---------|----------|
-| Claude API (Opus) | ~$4,500 | ~$0.15 |
-| Claude API (Sonnet) | ~$900 | ~$0.03 |
-| **CSW (구독)** | **$200** | **~$0.007** |
-
-동일 작업 대비 **4.5~22배 저렴**합니다. 응답 캐싱을 활성화하면 캐시된 응답은 비용이 0이므로 실질 비용은 더 낮아집니다.
+응답 캐싱을 켜면 캐시 적중 시 Claude를 아예 호출하지 않으므로, 꾸준한 워크로드일수록 건당 비용이 시간이 갈수록 내려갑니다.
 
 ## 아키텍처
 
@@ -69,7 +63,8 @@ tmux 기반 영속 세션. Claude가 tmux 세션에서 상시 실행되며, 파�
 | **프리셋 시스템** | 재사용 가능한 프롬프트 템플릿, 변수 치환 |
 | **프롬프트 조립** | 시스템 프롬프트 + 메모리 + 히스토리 자동 조합 |
 | **응답 파싱** | text/JSON/structured output + JSON 스키마 검증 |
-| **히스토리 압축** | 메시지 임계치 초과 시 Haiku로 자동 요약 |
+| **히스토리 압축** | 메시지 임계치 초과 시 지정된 범용 워커가 자동 요약 |
+| **Replica·대기열** | 워커 하나가 replica(병렬 tmux 세션) 여러 개를 운영, 모두 바쁘면 기본 최대 60초 대기 |
 | **Worker 헬스** | 30초 주기 체크, 행 감지 시 자동 재시작, 서버 재부팅 시 복원 |
 
 ## API 개요
@@ -78,25 +73,52 @@ tmux 기반 영속 세션. Claude가 tmux 세션에서 상시 실행되며, 파�
 |--------|----------|------|
 | `POST` | `/api/v1/process` | AI 요청 처리 (stateless/새 세션/기존 세션) |
 | `GET` | `/api/v1/sessions` | 세션 목록 |
+| `GET` | `/api/v1/sessions/:id` | 세션과 메시지 조회 |
+| `POST` | `/api/v1/sessions/:id/archive` | 세션 보관 |
 | `GET/POST` | `/api/v1/sessions/:id/memory` | 세션 메모리 조회/설정 |
 | `GET/POST` | `/api/v1/presets` | 프리셋 목록/생성 |
-| `POST` | `/api/v1/workers` | Worker 생성 |
+| `GET/PUT/DELETE` | `/api/v1/presets/:id` | 프리셋 CRUD (관리) |
+| `POST` | `/api/v1/presets/:id/run` | 프리셋을 `/process` 요청 본문으로 풀어서 반환 |
+| `POST` | `/api/v1/presets/:id/generate-sample` | 프리셋 샘플 입력 재생성 (관리) |
+| `GET` | `/api/v1/jobs` | 최근 작업 목록 |
+| `GET` | `/api/v1/jobs/:id` | 작업 조회 |
+| `GET` | `/api/v1/cache/stats` | 캐시 통계 |
+| `GET/DELETE` | `/api/v1/cache/:key` | 캐시 항목 조회/삭제 (삭제 = 관리) |
+| `POST` | `/api/v1/cache/purge` | 만료 캐시 정리 (관리) |
+| `POST` | `/api/v1/workers` | Worker 생성 (관리) |
 | `GET` | `/api/v1/workers` | Worker 목록 |
+| `GET` | `/api/v1/workers/:name` | Worker 상태 조회 |
+| `POST` | `/api/v1/workers/:name/wake` | 유휴 Worker 깨우기 |
+| `POST` | `/api/v1/workers/:name/scale` | Worker replica 수 설정 (관리) |
+| `POST` | `/api/v1/workers/:name/restart` | Worker 재시작 (관리) |
+| `DELETE` | `/api/v1/workers/:name` | Worker 삭제 (관리) |
+
+"관리" 엔드포인트는 서버 상태를 바꿉니다(워커는 호스트에서 프로세스를 실행합니다). API 전체를 내부망에 두세요 — [보안](#보안) 참조.
 
 전체 스펙은 [API Specification](./reference/api-spec.md) 참조.
+
+## 보안
+
+CSW는 호스트에서 CLI와 tmux 세션을 구동하므로, API를 관리 표면으로 취급해야 합니다.
+
+- **공개 인터넷에 노출하지 않습니다.** 내부망에서 운영하고, 앞단에 인증 프록시나 IP 허용 목록을 둡니다. 레퍼런스 서버에는 자체 인증이 없습니다.
+- **호스트에 닿는 모든 식별자를 검증합니다.** 워커 이름은 허용 문자 패턴(`^[a-z0-9][a-z0-9-]{0,31}$`)과 일치해야 하며, 그 외 값은 `400`으로 거부합니다.
+- **셸 문자열이 아니라 argv로 실행합니다.** `tmux` 등 외부 명령에는 값을 별도 인자(`execFile` 방식)로 넘기고, 명령 문자열에 끼워 넣지 않습니다.
+- **워커는 비특권 계정으로 실행합니다.** sudo 권한이 없고 워커 디렉터리에만 접근하는 전용 OS 사용자를 씁니다.
+
+자세한 내용은 [API Specification — Security](./reference/api-spec.md#security), [Worker Mode — Hardening](./architecture/worker-mode.md#hardening) 참조.
 
 ## 프로덕션 실적
 
 CSW는 [뉴명](https://newmyoung.com)의 AI 백엔드로 운영 중입니다 -- 한국, 일본, 화교문화권(대만, 싱가포르, 마카오, 말레이시아, 홍콩) AI 작명+운세 서비스:
 
-- **9개 프리셋**: 운세, 포춘쿠키, 질문 점치기 (언어별 3개씩)
+- **언어별 프리셋**: 운세, 포춘쿠키, 질문 점치기
 - **tmux Worker**: 사용자 대면 엔드포인트에 `alwaysOn` 적용
 - **Growing Pool Cache**: 다양한 AI 운세 응답 보장
-- **월 17,000+ 건**: 실질 건당 비용 ~$0.01
 
 ## 직접 구축하기
 
-이 저장소는 **개념과 참조 아키텍처**를 제공합니다. 프로덕션 CSW는 csw.nskit.io에서 운영되지만, 여기의 패턴은 범용적입니다.
+이 저장소는 **개념과 참조 아키텍처**를 제공합니다. 프로덕션 인스턴스는 내부망에서 비공개로 운영되며, 여기의 패턴은 범용적입니다.
 
 1. **블루프린트로 활용** -- CLI 도구가 있는 모든 AI 프로바이더에 적용 가능
 2. **Worker 모드 패턴 채택** -- tmux + inbox/outbox 패턴은 모든 장기 실행 CLI 프로세스에 적용 가능

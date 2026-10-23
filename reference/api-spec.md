@@ -1,8 +1,21 @@
 # API Specification
 
-Base URL: `https://your-csw-instance/api/v1`
+Base URL: `http://<private-host>:<port>/api/v1`
 
 All requests and responses use `Content-Type: application/json`.
+
+---
+
+## Security
+
+CSW has **no built-in authentication**, and several endpoints start or stop processes on the host. Treat the whole API as an administrative surface:
+
+- **Never expose it to the public internet.** Run it on a private network, behind an authenticating proxy or an IP allowlist.
+- **Input validation.** Worker names must match `^[a-z0-9][a-z0-9-]{0,31}$` (lowercase letters, digits and hyphens, max 32 characters). This is enforced on `POST /workers` and on every `/workers/:name` route; any other value returns `400`.
+- **No shell strings.** Any value that reaches tmux or another command must be passed as a separate argv element, never interpolated into a command string.
+- **Least privilege.** Run worker sessions under a dedicated unprivileged OS account (no sudo).
+
+Endpoints marked **(admin)** below change server state; restrict them further if your proxy allows per-route rules.
 
 ---
 
@@ -26,7 +39,7 @@ The core endpoint. Handles all AI processing requests.
   "cacheTtl": null,
   "options": {
     "model": "sonnet",
-    "effort": "medium",
+    "effort": "low",
     "worker": null
   }
 }
@@ -43,7 +56,7 @@ The core endpoint. Handles all AI processing requests.
 | `cachePool` | number | No | Pool target for Growing Pool Cache mode |
 | `cacheTtl` | number | No | Cache TTL in seconds (omit for permanent) |
 | `options.model` | string | No | Claude model: `"opus"`, `"sonnet"`, `"haiku"` (default: `"sonnet"`) |
-| `options.effort` | string | No | Processing effort: `"low"`, `"medium"`, `"high"` (default: `"medium"`) |
+| `options.effort` | string | No | Processing effort: `"low"`, `"medium"`, `"high"` (default: `"low"`, server setting `CLAUDE_EFFORT`) |
 | `options.worker` | string | No | Worker name to use Worker Mode |
 
 **Response:**
@@ -369,11 +382,70 @@ Get a single preset with full details.
 
 ### PUT /presets/:id
 
-Update a preset.
+Update a preset. **(admin)**
 
 ### DELETE /presets/:id
 
-Delete a preset.
+Delete a preset. **(admin)**
+
+### POST /presets/:id/run
+
+Resolve a preset into a ready-to-send `/process` request body. Fields in the request body (`input`, `systemPrompt`, `outputFormat`, `memory`, `options`, `sessionId`) override the preset's values. Increments the preset's usage count. It does not call Claude itself; send the returned `request` to `POST /process`.
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Use /api/v1/process with the preset data below",
+  "request": {
+    "sessionId": null,
+    "input": "...",
+    "systemPrompt": "...",
+    "outputFormat": null,
+    "memory": [],
+    "options": { "model": "sonnet", "worker": "fortune-kr" }
+  }
+}
+```
+
+### POST /presets/:id/generate-sample
+
+Regenerate the preset's sample input with Claude and return the updated preset. **(admin)**
+
+---
+
+## Jobs
+
+Every `/process` call is recorded as a job.
+
+### GET /jobs
+
+List recent jobs, newest first.
+
+**Query Parameters:**
+- `limit` (number): Max results. Default: `20`
+
+**Response:**
+```json
+{
+  "success": true,
+  "jobs": [
+    {
+      "id": "uuid",
+      "session_id": null,
+      "status": "completed",
+      "duration_ms": 8542,
+      "created_at": "2026-04-08T10:00:00.000Z",
+      "completed_at": "2026-04-08T10:00:08.542Z",
+      "request_body": "{...}"
+    }
+  ]
+}
+```
+
+### GET /jobs/:id
+
+Get a single job. Returns `404` if it does not exist.
 
 ---
 
@@ -404,11 +476,11 @@ Get a specific cache entry.
 
 ### DELETE /cache/:key
 
-Delete a specific cache entry and its pool entries.
+Delete a specific cache entry and its pool entries. **(admin)**
 
 ### POST /cache/purge
 
-Remove all expired cache entries.
+Remove all expired cache entries. **(admin)**
 
 **Response:**
 ```json
@@ -424,7 +496,7 @@ Remove all expired cache entries.
 
 ### POST /workers
 
-Create a new worker.
+Create a new worker. **(admin)**
 
 **Request Body:**
 ```json
@@ -432,8 +504,29 @@ Create a new worker.
   "name": "fortune-kr",
   "presetId": "c5f32e25-...",
   "alwaysOn": true,
-  "idleTimeout": 300,
-  "model": "sonnet"
+  "idleTimeout": 600000,
+  "jobTimeout": 30000,
+  "model": "sonnet",
+  "effort": "low"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Must match `^[a-z0-9][a-z0-9-]{0,31}$`. Anything else returns `400` |
+| `presetId` | string | No | Preset whose system prompt and options the worker uses |
+| `alwaysOn` | boolean | No | Never idle out (default `false`) |
+| `idleTimeout` | number | No | Milliseconds before an idle replica is stopped (default `600000`) |
+| `jobTimeout` | number | No | Milliseconds before a request is treated as hung (default `30000`) |
+| `model` / `effort` | string | No | Override the preset's model / effort |
+
+Replica count and queue wait come from the preset options (`replicas`, default `1`; `queueTimeout`, default `60000` ms). Change the replica count later with `POST /workers/:name/scale`.
+
+**Error Response (invalid name):**
+```json
+{
+  "success": false,
+  "error": "invalid worker name: must match ^[a-z0-9][a-z0-9-]{0,31}$"
 }
 ```
 
@@ -448,16 +541,18 @@ List all workers with their status.
   "workers": [
     {
       "name": "fortune-kr",
-      "status": "ready",
-      "presetId": "c5f32e25-...",
+      "status": "online",
+      "model": "sonnet",
       "alwaysOn": true,
-      "requestCount": 542,
-      "lastRequestAt": "2026-04-08T09:30:00.000Z",
-      "createdAt": "2026-04-07T00:00:00.000Z"
+      "replicaCount": 2,
+      "busyReplicas": 1,
+      "totalJobs": 542
     }
   ]
 }
 ```
+
+Worker `status` is one of `starting`, `online`, `busy`, `recovering`, `idle`, `offline`, derived from its replicas.
 
 ### GET /workers/:name
 
@@ -469,43 +564,72 @@ Get a single worker's status and details.
   "success": true,
   "worker": {
     "name": "fortune-kr",
-    "status": "ready",
-    "presetId": "c5f32e25-...",
+    "status": "online",
+    "model": "sonnet",
+    "effort": "low",
     "alwaysOn": true,
-    "requestCount": 542,
-    "lastRequestAt": "2026-04-08T09:30:00.000Z",
-    "createdAt": "2026-04-07T00:00:00.000Z"
+    "idleTimeout": 600000,
+    "jobTimeout": 30000,
+    "queueTimeout": 60000,
+    "replicaCount": 2,
+    "busyReplicas": 1,
+    "replicas": [
+      { "idx": 1, "status": "busy", "currentJobId": "uuid", "recoveryAttempts": 0 },
+      { "idx": 2, "status": "online", "currentJobId": null, "recoveryAttempts": 0 }
+    ],
+    "totalJobs": 542,
+    "totalErrors": 3
   }
 }
 ```
 
 ### POST /workers/:name/wake
 
-Wake an idle worker, recreating its tmux session so it is ready to serve the next request.
+Wake an idle worker, restarting its sleeping replicas so it is ready to serve the next request. If the worker is already `online` or `busy`, nothing changes.
 
 **Response:**
 ```json
 {
   "success": true,
-  "message": "Worker woken"
+  "message": "Worker fortune-kr: 2 replica(s) waking up"
+}
+```
+
+### POST /workers/:name/scale
+
+Set the number of replicas (parallel tmux sessions) for a worker. Scaling up starts new replicas (staggered by 3 seconds); scaling down stops replicas from the tail. **(admin)**
+
+**Request Body:**
+```json
+{ "replicas": 3 }
+```
+
+`replicas` must be `>= 1`, otherwise `400`.
+
+**Response:**
+```json
+{
+  "success": true,
+  "replicas": 3,
+  "changed": true
 }
 ```
 
 ### POST /workers/:name/restart
 
-Restart a worker (tear down and recreate its tmux session). Used to recover a hung or errored worker.
+Restart a worker (tear down and recreate the tmux sessions of all its replicas). Used to recover a hung or errored worker. **(admin)**
 
 **Response:**
 ```json
 {
   "success": true,
-  "message": "Worker restarted"
+  "message": "Worker fortune-kr restart initiated"
 }
 ```
 
 ### DELETE /workers/:name
 
-Destroy a worker and its tmux session.
+Destroy a worker and the tmux sessions of all its replicas. **(admin)**
 
 ---
 
@@ -513,20 +637,19 @@ Destroy a worker and its tmux session.
 
 ### GET /health
 
-Server health check.
+Server health check. `status` is `ok` when the Claude CLI responds to a version check, and `degraded` when it does not: the server is up, but requests that need Claude will fail.
 
 **Response:**
 ```json
 {
   "status": "ok",
-  "uptime": 864000,
-  "workers": {
-    "total": 9,
-    "ready": 8,
-    "processing": 1,
-    "idle": 0
-  },
-  "db": "connected",
-  "version": "2.0.0"
+  "service": "csw",
+  "timestamp": "2026-04-08T10:00:00.000Z",
+  "claude": {
+    "ok": true,
+    "checkedAt": "2026-04-08T09:59:30.000Z",
+    "error": null,
+    "version": "x.y.z"
+  }
 }
 ```

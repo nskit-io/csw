@@ -11,7 +11,7 @@ CSW (Claude Subscription Worker) is a Node.js API server that wraps the Claude C
 │                     Client Applications                  │
 │              (Backend services, admin tools)              │
 └──────────────────────┬──────────────────────────────────┘
-                       │ REST API (HTTPS)
+                       │ REST API (private network)
                        ▼
 ┌─────────────────────────────────────────────────────────┐
 │                   CSW API Server                         │
@@ -77,9 +77,10 @@ CSW (Claude Subscription Worker) is a Node.js API server that wraps the Claude C
 
 ```
 1. Client sends POST /api/v1/process with options.worker
-2. Worker Manager finds or creates tmux worker
+2. Worker Manager picks a free replica of the named worker
+   (waits up to queueTimeout if all replicas are busy)
 3. Job written to inbox/{jobId}.json
-4. tmux send-keys triggers Claude to read inbox
+4. tmux send-keys (argv, no shell) triggers Claude to read inbox
 5. Worker Manager polls outbox/{jobId}.json (100ms interval)
 6. Claude writes response to outbox
 7. Worker Manager reads outbox, sends /clear to reset
@@ -119,7 +120,7 @@ Per-session key-value store with categories:
 - **action**: Behavioral directives ("When asked about health, add a disclaimer")
 
 ### Compactor
-When a session's message count exceeds the threshold (default: 20), older messages are summarized using a lightweight model (Haiku). The summary replaces the original messages, keeping the context window manageable while preserving essential information.
+When a session's message count exceeds the threshold (default: 20), older messages are summarized by a designated general-purpose worker. The summary replaces the original messages, keeping the context window manageable while preserving essential information.
 
 ### Job Manager
 Tracks every processing request with status (queued/processing/completed/failed/timeout), request/response bodies, duration, and error details.
@@ -128,20 +129,25 @@ Tracks every processing request with status (queued/processing/completed/failed/
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `PORT` | Server port | `5900` |
+| `CSW_PORT` | Server port | `8080` |
 | `DB_HOST` | MySQL host | `localhost` |
 | `DB_PORT` | MySQL port | `3306` |
 | `DB_USER` | MySQL user | `csw` |
 | `DB_PASSWORD` | MySQL password | `***` |
 | `DB_NAME` | Database name | `csw` |
 | `CLAUDE_MODEL` | Default model | `sonnet` |
-| `CSW_WORKER_USER` | OS user for tmux workers | `nskit` |
+| `CLAUDE_EFFORT` | Default effort level (default `low`) | `low` |
+| `COMPACTION_THRESHOLD` | Messages before history compaction | `20` |
+| `CSW_WORKERS_DIR` | Base directory for worker files | `/var/lib/csw/workers` |
+| `CSW_WORKER_USER` | OS user for tmux workers — a dedicated unprivileged account, no sudo | `csw-worker` |
+
+Bind the server to a private interface and keep it off the public internet; see [Worker Mode — Hardening](./worker-mode.md#hardening).
 
 ## Key Design Decisions
 
 ### Why `claude -p` instead of the API?
 
-Cost. A $200/month subscription handles the same workload that would cost $900-4,500/month via API. The tradeoff is throughput (sequential CLI calls vs parallel API calls), but for most use cases, CSW's caching and worker mode compensate for this.
+Cost shape. The API is billed per token, so cost grows with volume; a subscription is a flat monthly fee within plan limits (current prices: [anthropic.com/pricing](https://www.anthropic.com/pricing)). For steady, cacheable workloads the flat fee wins. The tradeoff is throughput (CLI sessions vs parallel API calls), which CSW's caching and worker replicas partly compensate for.
 
 ### Why tmux for Worker Mode?
 
