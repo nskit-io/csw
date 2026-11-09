@@ -1,6 +1,6 @@
 # Worker Mode v2 Architecture
 
-Worker Mode turns CSW from a stateless CLI wrapper into a persistent AI processing engine. Instead of spawning a new `claude -p` process per request (14-40s cold-start), Worker Mode maintains long-running Claude sessions in tmux, cutting response time by 2.5x.
+Worker Mode turns CSW from a stateless CLI wrapper into a persistent AI processing engine. Instead of spawning a new `claude -p` process per request (14-40s cold-start), Worker Mode maintains long-running Claude sessions in tmux, so requests skip that per-request cold start.
 
 ## Lifecycle
 
@@ -62,7 +62,7 @@ Resource management for workers that aren't `alwaysOn`:
 
 ### alwaysOn Workers
 
-For user-facing endpoints where the ~16s wake penalty is unacceptable, workers can be configured with `alwaysOn: true`. These workers:
+For latency-sensitive (interactive) endpoints where the ~16s wake penalty is unacceptable, workers can be configured with `alwaysOn: true`. These workers:
 
 - Never enter the `idle` state
 - Survive server reboots (auto-restored from `worker.json`)
@@ -155,7 +155,7 @@ Worker Mode starts processes on the host from API input, so the following are re
 |----------|-----------------|
 | One-off text processing | Standard |
 | Batch processing (100+ items) | Standard |
-| User-facing API (< 5s expected) | Worker (alwaysOn) |
+| Interactive local tool (< 5s expected) | Worker (alwaysOn) |
 | Conversational AI features | Worker |
 | Background cron jobs | Standard |
 | High-frequency same-preset calls | Worker |

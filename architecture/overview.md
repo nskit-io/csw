@@ -2,14 +2,14 @@
 
 ## Overview
 
-CSW (Claude Subscription Worker) is a Node.js API server that wraps the Claude CLI (`claude -p`) into a REST API. It manages sessions, caching, presets, and worker lifecycles to turn a flat-rate Claude subscription into a production AI processing backend.
+CSW (Claude Subscription Worker) is a Node.js API server that wraps the Claude CLI (`claude -p`) into a REST API. It manages sessions, caching, presets, and worker lifecycles so that the developer's own scripts and local tools can call the Claude CLI they are signed in to. It is a personal / development tool, not a back end for production or commercial services.
 
 ## High-Level Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                     Client Applications                  │
-│              (Backend services, admin tools)              │
+│          (Your own scripts, local dev tools)              │
 └──────────────────────┬──────────────────────────────────┘
                        │ REST API (private network)
                        ▼
@@ -147,7 +147,7 @@ Bind the server to a private interface and keep it off the public internet; see 
 
 ### Why `claude -p` instead of the API?
 
-Cost shape. The API is billed per token, so cost grows with volume; a subscription is a flat monthly fee within plan limits (current prices: [anthropic.com/pricing](https://www.anthropic.com/pricing)). For steady, cacheable workloads the flat fee wins. The tradeoff is throughput (CLI sessions vs parallel API calls), which CSW's caching and worker replicas partly compensate for.
+CSW is built for a developer's own use of the CLI they already run: personal scripts, local tools and experiments, within the subscription's usage policies and plan limits. Products or services that serve other users, and commercial or production workloads, should use the Claude API (current prices: [anthropic.com/pricing](https://www.anthropic.com/pricing)). The tradeoff of the CLI path is throughput (CLI sessions vs parallel API calls), which CSW's caching and worker replicas partly compensate for.
 
 ### Why tmux for Worker Mode?
 

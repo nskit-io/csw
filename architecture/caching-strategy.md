@@ -31,7 +31,7 @@ Request with cacheKey="greeting:en"
 
 ## Pool Cache (Growing Pool)
 
-For AI-generated content where diversity matters -- you don't want every user to see the same fortune reading or creative writing.
+For AI-generated content where diversity matters -- you don't want every call to return the same fortune text or creative writing.
 
 Pool Cache uses the [Growing Pool Cache](https://github.com/nskit-io/growing-pool-cache) pattern:
 
@@ -63,7 +63,7 @@ With `poolTarget=3`:
 | 5 | 15 |
 | 10 | 30 |
 
-At 1,000 requests served, a pool might make only ~30 AI calls. That's a **97% cost reduction** while maintaining response diversity.
+At 1,000 requests served, a pool makes roughly 25-30 AI calls (with `poolTarget=3`, reaching pool size k takes about 1.5 x k x (k-1) requests). That is **~97% fewer AI calls** than calling the model every time, while maintaining response diversity. (Calculated from the growth rule above, not a measured benchmark.)
 
 ### Configuration
 

@@ -2,9 +2,9 @@
 
 # CSW (Claude Subscription Worker)
 
-**把固定月费的 Claude 订阅变成可扩展的 AI 处理 API。**
+**把你自己的 Claude CLI(`claude -p`)封装成本地 REST API 的个人开发者工具。**
 
-> [**NSKit**](https://github.com/nskit-io/nskit-io) 的基础设施组件 — *有结构,才有无限组合*。CSW 承担 NSKit 生产服务的 AI 处理层,把订阅级别的 Claude 转化为成本高效的后端能力。
+> [**NSKit**](https://github.com/nskit-io/nskit-io) 项目的开发者工具 — *有结构,才有无限组合*。CSW 是个人/开发用工具:让你自己的脚本和本地工具通过你本机(或私有网络)上的 REST API 调用你已登录的 Claude CLI。它不是商业或生产服务的后端。
 
 ---
 
@@ -14,23 +14,21 @@ Claude API **按 token 计费**:每次请求都按输入、输出 token 计量,�
 
 而 Claude 订阅是**固定月费**,可在套餐使用上限内通过 CLI(`claude -p`)使用。
 
-**CSW 就是这座桥梁**。它把 Claude CLI 封装成 REST API 服务器,让稳定、可缓存的后端负载运行在固定月费的订阅上,而不是按量计费的账单上。
+**CSW 为你自己的使用封装这个 CLI**。它把 Claude CLI 放在 REST API 服务器之后,让个人脚本、本地工具和开发实验可以带着会话、预设和缓存来调用。
 
-> 最新 API 价格与套餐信息: [anthropic.com/pricing](https://www.anthropic.com/pricing)。订阅使用须遵循 Anthropic 的使用政策与套餐上限。CSW 面向正当处理负载,不用于滥用。
+> **使用范围。** Claude 订阅供订阅者本人使用,须遵循 Anthropic 的使用政策与套餐上限。CSW 只用于你本人的个人与开发工作。面向其他用户的产品或服务、商业与生产负载请使用 [Claude API](https://www.anthropic.com/api)。最新 API 价格与套餐信息: [anthropic.com/pricing](https://www.anthropic.com/pricing)。
 
 ---
 
-## 成本结构
+## 该用哪一个
 
-价格会变动,因此本文档不固定具体数字。差别在于结构:
-
-| | 按 token 计费的 API | 通过 CSW 使用固定月费订阅 |
+| | Claude API | 通过 CSW 使用你自己的订阅 |
 |---|---|---|
-| 成本形态 | 随处理的 token 线性增长 | 每月固定 |
+| 计费 | 按 token | 你本人的固定月费套餐 |
 | 吞吐 | 并行,受 API 计费等级的速率限制 | 受套餐上限与 worker 会话数限制 |
-| 适合场景 | 流量波动大或量少、严格 SLA | 流量稳定、提示词重复、响应可缓存 |
+| 用途 | 面向其他用户的产品与服务、商业与生产负载 | 你本人的个人与开发工作:脚本、本地工具、实验 |
 
-启用响应缓存后,缓存命中时完全不调用 Claude,因此负载越稳定,单次请求成本越会随时间下降。
+启用响应缓存后,缓存命中时完全不调用 Claude,重复的本地调用更快,也更能保持在套餐上限之内。
 
 ---
 
@@ -50,9 +48,9 @@ CSW 有两种运行模式:
 
 持久化 tmux 会话。Claude 常驻 tmux 会话,通过基于文件的 inbox/outbox 接收命令。
 
-- **优点**: 快 2.5 倍(无冷启动),维持会话上下文,支持 `alwaysOn`
+- **优点**: 每次请求更快(没有每请求 ~14-40 秒的冷启动),维持会话上下文,支持 `alwaysOn`
 - **缺点**: 生命周期管理更复杂,初始会话创建 ~16 秒
-- **适用**: 面向用户的 API、会话式工作流、高频请求
+- **适用**: 交互式本地工具、会话式工作流、频繁请求
 
 ---
 
@@ -78,9 +76,9 @@ CSW 会在宿主机上驱动 CLI 与 tmux 会话,因此应把它的 API 当作�
 
 ---
 
-## 在 NSKit 中的作用
+## 与 NSKit 的关系
 
-作为 NSKit 生产服务的 AI 处理层运行。与混用 Gemini/GPT/Claude 不同,CSW 让订阅级别提供统一能力,使成本可预测。
+在 NSKit 的开发工作中,作为开发者本人的本地/开发用工具而构建。它不是生产服务的后端。
 
 ---
 

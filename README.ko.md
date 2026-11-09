@@ -1,12 +1,12 @@
 # CSW (Claude Subscription Worker)
 
-**정액 Claude 구독을 확장 가능한 AI 처리 API로 전환합니다.**
+**내 Claude CLI(`claude -p`)를 로컬 REST API로 감싸는 개인 개발자 도구.**
 
 [🇬🇧 English](./README.md) · [🇯🇵 日本語](./README.ja.md) · [🇨🇳 中文](./README.zh.md)
 
 [아키텍처](./architecture/overview.md) | [Worker 모드](./architecture/worker-mode.md) | [API 스펙](./reference/api-spec.md) | [스키마](./reference/schema.sql)
 
-> [**NSKit**](https://github.com/nskit-io/nskit-io) 인프라 구성 요소 — *갇혀 있어서 무한 조합*. CSW는 NSKit 프로덕션 서비스의 AI 처리 레이어를 담당합니다. 구독 티어의 Claude를 비용 효율적 백엔드 역량으로 전환.
+> [**NSKit**](https://github.com/nskit-io/nskit-io) 프로젝트의 개발자 도구 — *갇혀 있어서 무한 조합*. CSW는 개인·개발용 도구입니다. 내가 로그인한 Claude CLI를 내 스크립트와 로컬 도구가 내 기기(또는 사설망)의 REST API로 호출할 수 있게 합니다. 상용·프로덕션 서비스의 백엔드가 아닙니다.
 
 ---
 
@@ -16,21 +16,19 @@ Claude API는 **토큰 단위 과금**입니다. 요청마다 입력·출력 토
 
 Claude 구독은 **월 정액**이며, 플랜의 사용 한도 안에서 CLI(`claude -p`)로 쓸 수 있습니다.
 
-**CSW는 이 격차를 메웁니다.** Claude CLI를 REST API 서버로 감싸서, 꾸준하고 캐시 가능한 백엔드 워크로드를 종량 청구 대신 정액 구독 위에서 돌릴 수 있게 합니다.
+**CSW는 이 CLI를 내 용도로 감쌉니다.** Claude CLI를 REST API 서버 뒤에 두어, 개인 스크립트·로컬 도구·개발 실험이 세션·프리셋·캐싱과 함께 호출할 수 있게 합니다.
 
-> 최신 API 가격과 플랜 정보: [anthropic.com/pricing](https://www.anthropic.com/pricing). 구독 사용은 Anthropic의 이용 정책과 플랜 한도를 따릅니다. CSW는 정당한 처리 워크로드를 위해 설계되었습니다.
+> **사용 범위.** Claude 구독은 구독자 본인의 사용을 위한 것이며 Anthropic의 이용 정책과 플랜 한도를 따릅니다. CSW는 본인의 개인·개발 작업에만 쓰십시오. 다른 사용자에게 제공하는 제품·서비스, 상용·프로덕션 워크로드에는 [Claude API](https://www.anthropic.com/api)를 쓰십시오. 최신 API 가격과 플랜 정보: [anthropic.com/pricing](https://www.anthropic.com/pricing).
 
-## 비용 구조
+## 무엇을 쓸까
 
-가격은 바뀌므로 이 문서는 숫자를 고정하지 않습니다. 차이는 구조에 있습니다.
-
-| | 토큰 과금 API | CSW를 통한 정액 구독 |
+| | Claude API | CSW를 통한 내 구독 |
 |---|---|---|
-| 비용 형태 | 처리한 토큰에 비례해 증가 | 월 고정 |
+| 과금 | 토큰 단위 | 본인의 월 정액 플랜 |
 | 처리량 | 병렬, API 요금 등급의 rate limit | 플랜 한도와 워커 세션 수에 제한 |
-| 적합한 경우 | 들쭉날쭉하거나 적은 트래픽, 엄격한 SLA | 꾸준한 트래픽, 반복 프롬프트, 캐시 가능한 응답 |
+| 용도 | 다른 사용자에게 제공하는 제품·서비스, 상용·프로덕션 워크로드 | 본인의 개인·개발 작업: 스크립트, 로컬 도구, 실험 |
 
-응답 캐싱을 켜면 캐시 적중 시 Claude를 아예 호출하지 않으므로, 꾸준한 워크로드일수록 건당 비용이 시간이 갈수록 내려갑니다.
+응답 캐싱을 켜면 캐시 적중 시 Claude를 아예 호출하지 않으므로, 반복되는 로컬 호출이 빠르고 플랜 한도 안에 머뭅니다.
 
 ## 아키텍처
 
@@ -48,9 +46,9 @@ CSW는 두 가지 모드로 동작합니다:
 
 tmux 기반 영속 세션. Claude가 tmux 세션에서 상시 실행되며, 파일 기반 inbox/outbox로 명령을 전달받습니다.
 
-- **장점**: 2.5배 빠름 (cold-start 없음), 대화 컨텍스트 유지, `alwaysOn` 지원
+- **장점**: 요청당 더 빠름 (요청마다 ~14-40초의 cold-start 없음), 대화 컨텍스트 유지, `alwaysOn` 지원
 - **단점**: 더 복잡한 생명주기 관리, 초기 세션 생성 ~16초
-- **적합**: 사용자 대면 API, 대화형 워크플로우, 고빈도 요청
+- **적합**: 대화형 로컬 도구, 대화형 워크플로우, 잦은 요청
 
 자세한 내용은 [Worker 모드 아키텍처](./architecture/worker-mode.md) 참조.
 
@@ -108,17 +106,9 @@ CSW는 호스트에서 CLI와 tmux 세션을 구동하므로, API를 관리 표�
 
 자세한 내용은 [API Specification — Security](./reference/api-spec.md#security), [Worker Mode — Hardening](./architecture/worker-mode.md#hardening) 참조.
 
-## 프로덕션 실적
-
-CSW는 [뉴명](https://newmyoung.com)의 AI 백엔드로 운영 중입니다 -- 한국, 일본, 화교문화권(대만, 싱가포르, 마카오, 말레이시아, 홍콩) AI 작명+운세 서비스:
-
-- **언어별 프리셋**: 운세, 포춘쿠키, 질문 점치기
-- **tmux Worker**: 사용자 대면 엔드포인트에 `alwaysOn` 적용
-- **Growing Pool Cache**: 다양한 AI 운세 응답 보장
-
 ## 직접 구축하기
 
-이 저장소는 **개념과 참조 아키텍처**를 제공합니다. 프로덕션 인스턴스는 내부망에서 비공개로 운영되며, 여기의 패턴은 범용적입니다.
+이 저장소는 **개념과 참조 아키텍처**를 제공합니다. 작성자 본인의 인스턴스는 개인 개발망에서 비공개로 운영되며, 여기의 패턴은 범용적입니다.
 
 1. **블루프린트로 활용** -- CLI 도구가 있는 모든 AI 프로바이더에 적용 가능
 2. **Worker 모드 패턴 채택** -- tmux + inbox/outbox 패턴은 모든 장기 실행 CLI 프로세스에 적용 가능
@@ -129,7 +119,7 @@ CSW는 [뉴명](https://newmyoung.com)의 AI 백엔드로 운영 중입니다 --
 
 - [growing-pool-cache](https://github.com/nskit-io/growing-pool-cache) -- AI 생성 콘텐츠를 위한 자가 성장 캐시 풀 (npm 패키지)
 - [ai-native-design](https://github.com/nskit-io/ai-native-design) -- AI-Native Design 철학
-- [NSKit](https://nskit.io) -- CSW가 서빙하는 AI-Native 웹 프레임워크
+- [NSKit](https://nskit.io) -- CSW와 함께 개발된 AI-Native 웹 프레임워크
 
 ## 라이선스
 

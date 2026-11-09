@@ -1,12 +1,12 @@
 # CSW (Claude Subscription Worker)
 
-**Turn a flat-rate Claude subscription into a scalable AI processing API.**
+**A personal developer tool that wraps your own Claude CLI (`claude -p`) in a local REST API.**
 
 [🇰🇷 한국어](./README.ko.md) · [🇯🇵 日本語](./README.ja.md) · [🇨🇳 中文](./README.zh.md)
 
 [Architecture](./architecture/overview.md) | [Worker Mode](./architecture/worker-mode.md) | [API Spec](./reference/api-spec.md) | [Schema](./reference/schema.sql)
 
-> Infrastructure component of [**NSKit**](https://github.com/nskit-io/nskit-io) — *bound by structure, free to combine.* CSW powers the AI processing layer behind NSKit's production services, turning subscription-tier Claude into cost-efficient back-end capability.
+> Developer tooling from the [**NSKit**](https://github.com/nskit-io/nskit-io) project — *bound by structure, free to combine.* CSW is a personal / development tool: it lets your own scripts and local tools call the Claude CLI you are signed in to, through a REST API on your own machine or private network. It is not a back end for commercial or production services.
 
 ---
 
@@ -16,21 +16,19 @@ The Claude API is billed **per token**: every request is metered on its input an
 
 A Claude subscription is billed as a **flat monthly fee** and can be used from the CLI (`claude -p`) within the plan's usage limits.
 
-**CSW bridges this gap.** It wraps the Claude CLI into a REST API server, so steady, cacheable back-end workloads can run on a flat-rate subscription instead of a metered bill.
+**CSW wraps the CLI for your own use.** It puts the Claude CLI behind a REST API server so that your personal scripts, local tools and development experiments can call it with sessions, presets and caching.
 
-> Current API prices and plan details: [anthropic.com/pricing](https://www.anthropic.com/pricing). Subscription use is subject to Anthropic's usage policies and plan limits. CSW is designed for legitimate processing workloads, not abuse.
+> **Scope of use.** A Claude subscription is for the subscriber's own use, subject to Anthropic's usage policies and plan limits. Use CSW only for your own personal and development work. Products or services that serve other users, commercial or production workloads should use the [Claude API](https://www.anthropic.com/api) instead. Current API prices and plan details: [anthropic.com/pricing](https://www.anthropic.com/pricing).
 
-## Cost Model
+## Which One to Use
 
-Exact prices change, so this README does not pin numbers. The trade-off is structural:
-
-| | Pay-per-token API | Flat subscription via CSW |
+| | Claude API | Your subscription via CSW |
 |---|---|---|
-| Cost shape | Grows linearly with tokens processed | Fixed per month |
+| Billing | Per token | Your own flat monthly plan |
 | Throughput | Parallel, limited by API rate tiers | Bounded by plan limits and the number of worker sessions |
-| Fits best | Spiky or low volume, strict SLAs | Steady volume, repeatable prompts, cacheable responses |
+| Use for | Products and services for other users, commercial and production workloads | Your own personal and development work: scripts, local tools, experiments |
 
-With response caching enabled, a cache hit does not call Claude at all, so steady workloads get cheaper per request over time.
+With response caching enabled, a cache hit does not call Claude at all, which keeps repeated local calls fast and within plan limits.
 
 ## Architecture
 
@@ -50,9 +48,9 @@ Stateless processing. Each request spawns a new `claude -p` process, executes, a
 
 Persistent tmux-based sessions. Claude stays running in a tmux session, receiving commands via file-based inbox/outbox.
 
-- **Pros**: 2.5x faster (no cold-start), maintains conversation context, supports `alwaysOn`
+- **Pros**: Faster per request (no per-request cold start of ~14-40s), maintains conversation context, supports `alwaysOn`
 - **Cons**: More complex lifecycle management, ~16s initial session creation
-- **Best for**: User-facing APIs, conversational workflows, high-frequency requests
+- **Best for**: Interactive local tools, conversational workflows, frequent requests
 
 See [Worker Mode Architecture](./architecture/worker-mode.md) for the full lifecycle.
 
@@ -125,17 +123,9 @@ CSW drives a CLI and tmux sessions on its host, so treat its API as an administr
 
 See [API Specification — Security](./reference/api-spec.md#security) and [Worker Mode — Hardening](./architecture/worker-mode.md#hardening).
 
-## Production Use
-
-CSW powers the AI backend for [NewMyoung](https://newmyoung.com) -- an AI-powered fortune and naming service operating across Korea, Japan, and Chinese-speaking regions (Taiwan, Singapore, Macau, Malaysia, Hong Kong):
-
-- **Per-language presets** handling fortune readings, fortune cookies, and divination queries
-- **tmux-based workers** with `alwaysOn` for user-facing endpoints
-- **Growing Pool Cache** ensuring diverse AI-generated fortunes (no two users see the same reading)
-
 ## Build Your Own
 
-This repository provides the **concept and reference architecture**. The production instance is privately operated on an internal network; the patterns here are general-purpose.
+This repository provides the **concept and reference architecture**. The author's own instance runs privately on a personal development network; the patterns here are general-purpose.
 
 You can:
 
@@ -158,7 +148,7 @@ You can:
 
 - [growing-pool-cache](https://github.com/nskit-io/growing-pool-cache) -- Self-growing cache pool for AI-generated content (npm package)
 - [ai-native-design](https://github.com/nskit-io/ai-native-design) -- AI-Native Design philosophy for building AI-collaborative frameworks
-- [NSKit](https://nskit.io) -- The AI-native web framework that CSW was built to serve
+- [NSKit](https://nskit.io) -- The AI-native web framework CSW was developed alongside
 
 ## License
 
